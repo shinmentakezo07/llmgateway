@@ -107,6 +107,32 @@ export const relations = defineRelations(schema, (r) => ({
 			to: r.organization.id,
 		}),
 	},
+	customProvider: {
+		project: r.one.project({
+			from: r.customProvider.projectId,
+			to: r.project.id,
+		}),
+		keys: r.many.customProviderKey({
+			from: r.customProvider.id,
+			to: r.customProviderKey.providerId,
+		}),
+		models: r.many.customProviderModel({
+			from: r.customProvider.id,
+			to: r.customProviderModel.providerId,
+		}),
+	},
+	customProviderKey: {
+		provider: r.one.customProvider({
+			from: r.customProviderKey.providerId,
+			to: r.customProvider.id,
+		}),
+	},
+	customProviderModel: {
+		provider: r.one.customProvider({
+			from: r.customProviderModel.providerId,
+			to: r.customProvider.id,
+		}),
+	},
 	log: {
 		project: r.one.project({
 			from: r.log.projectId,
