@@ -7,6 +7,7 @@ import admin from "./admin.js";
 import { auditLogs } from "./audit-logs.js";
 import { chat } from "./chat.js";
 import { chats } from "./chats.js";
+import { customProviders } from "./custom-providers.js";
 import { devPlans } from "./dev-plans.js";
 import { guardrails } from "./guardrails.js";
 import keysApi from "./keys-api.js";
@@ -60,3 +61,5 @@ routes.route("/subscriptions", subscriptions);
 routes.route("/dev-plans", devPlans);
 routes.route("/audit-logs", auditLogs);
 routes.route("/guardrails", guardrails);
+
+routes.route("/providers/custom", customProviders);

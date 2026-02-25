@@ -420,6 +420,77 @@ export const providerKey = pgTable(
 	],
 );
 
+export const customProvider = pgTable(
+	"custom_provider",
+	{
+		id: text().primaryKey().notNull().$defaultFn(shortid),
+		createdAt: timestamp().notNull().defaultNow(),
+		updatedAt: timestamp()
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+		projectId: text()
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		name: text().notNull(),
+		baseUrl: text().notNull(),
+		description: text(),
+		isEnabled: boolean().notNull().default(true),
+		roundRobinIndex: integer().notNull().default(0),
+	},
+	(table) => [
+		index("custom_provider_project_id_idx").on(table.projectId),
+		unique().on(table.projectId, table.name),
+	],
+);
+
+export const customProviderKey = pgTable(
+	"custom_provider_key",
+	{
+		id: text().primaryKey().notNull().$defaultFn(shortid),
+		createdAt: timestamp().notNull().defaultNow(),
+		updatedAt: timestamp()
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+		providerId: text()
+			.notNull()
+			.references(() => customProvider.id, { onDelete: "cascade" }),
+		displayName: text(),
+		encryptedKey: text().notNull(),
+		isEnabled: boolean().notNull().default(true),
+		isHealthy: boolean().notNull().default(true),
+		lastFailedAt: timestamp(),
+		failureCount: integer().notNull().default(0),
+	},
+	(table) => [
+		index("custom_provider_key_provider_id_idx").on(table.providerId),
+	],
+);
+
+export const customProviderModel = pgTable(
+	"custom_provider_model",
+	{
+		id: text().primaryKey().notNull().$defaultFn(shortid),
+		createdAt: timestamp().notNull().defaultNow(),
+		updatedAt: timestamp()
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+		providerId: text()
+			.notNull()
+			.references(() => customProvider.id, { onDelete: "cascade" }),
+		modelId: text().notNull(),
+		displayName: text(),
+		isEnabled: boolean().notNull().default(true),
+		isManual: boolean().notNull().default(false),
+	},
+	(table) => [
+		index("custom_provider_model_provider_id_idx").on(table.providerId),
+		unique().on(table.providerId, table.modelId),
+	],
+);
+
 export const log = pgTable(
 	"log",
 	{

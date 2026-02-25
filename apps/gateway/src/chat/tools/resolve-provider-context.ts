@@ -4,6 +4,7 @@ import {
 	findCustomProviderKey,
 	findProviderKey,
 } from "@/lib/cached-queries.js";
+import { decryptCustomProviderKey } from "@/lib/custom-provider-crypto.js";
 
 import {
 	getProviderEndpoint,
@@ -118,7 +119,7 @@ export async function resolveProviderContext(
 ): Promise<ProviderContext> {
 	const usedProvider = providerMapping.providerId as Provider;
 	const usedModel = providerMapping.modelName;
-	const baseModelName = modelInfo.id || usedModel;
+	const baseModelName = modelInfo.id ?? usedModel;
 	const usedModelMapping = usedModel;
 	const usedModelFormatted = `${usedProvider}/${baseModelName}`;
 
@@ -144,7 +145,10 @@ export async function resolveProviderContext(
 			});
 		}
 
-		usedToken = providerKey.token;
+		usedToken =
+			usedProvider === "custom"
+				? decryptCustomProviderKey(providerKey.token)
+				: providerKey.token;
 	} else if (project.mode === "credits") {
 		const envResult = getProviderEnv(usedProvider as Provider);
 		usedToken = envResult.token;
@@ -161,7 +165,10 @@ export async function resolveProviderContext(
 		}
 
 		if (providerKey) {
-			usedToken = providerKey.token;
+			usedToken =
+				usedProvider === "custom"
+					? decryptCustomProviderKey(providerKey.token)
+					: providerKey.token;
 		} else {
 			const envResult = getProviderEnv(usedProvider as Provider);
 			usedToken = envResult.token;

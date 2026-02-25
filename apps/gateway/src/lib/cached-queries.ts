@@ -20,6 +20,8 @@ import {
 	apiKeyIamRule as apiKeyIamRuleTable,
 	organization as organizationTable,
 	project as projectTable,
+	customProvider as customProviderTable,
+	customProviderKey as customProviderKeyTable,
 	providerKey as providerKeyTable,
 	user as userTable,
 	userOrganization as userOrganizationTable,
@@ -105,9 +107,9 @@ export async function findOrganizationById(
 	// If org has 0 or negative credits, refetch without cache
 	// to ensure topups are reflected immediately
 	if (org) {
-		const regularCredits = parseFloat(org.credits || "0");
-		const devPlanCreditsUsed = parseFloat(org.devPlanCreditsUsed || "0");
-		const devPlanCreditsLimit = parseFloat(org.devPlanCreditsLimit || "0");
+		const regularCredits = parseFloat(org.credits ?? "0");
+		const devPlanCreditsUsed = parseFloat(org.devPlanCreditsUsed ?? "0");
+		const devPlanCreditsLimit = parseFloat(org.devPlanCreditsLimit ?? "0");
 		const devPlanCreditsRemaining =
 			org.devPlan !== "none" ? devPlanCreditsLimit - devPlanCreditsUsed : 0;
 		const totalCredits = regularCredits + devPlanCreditsRemaining;
@@ -127,7 +129,7 @@ export async function findCustomProviderKey(
 	organizationId: string,
 	customProviderName: string,
 ): Promise<ProviderKey | undefined> {
-	const results = await db
+	const legacyResults = await db
 		.select()
 		.from(providerKeyTable)
 		.where(
@@ -139,7 +141,51 @@ export async function findCustomProviderKey(
 			),
 		)
 		.limit(1);
-	return results[0];
+	if (legacyResults[0]) {
+		return legacyResults[0];
+	}
+
+	const customProviderResults = await uncachedDb
+		.select({
+			provider: customProviderTable,
+			key: customProviderKeyTable,
+		})
+		.from(customProviderTable)
+		.innerJoin(projectTable, eq(customProviderTable.projectId, projectTable.id))
+		.innerJoin(
+			customProviderKeyTable,
+			and(
+				eq(customProviderKeyTable.providerId, customProviderTable.id),
+				eq(customProviderKeyTable.isEnabled, true),
+			),
+		)
+		.where(
+			and(
+				eq(projectTable.organizationId, organizationId),
+				eq(customProviderTable.id, customProviderName),
+				eq(customProviderTable.isEnabled, true),
+			),
+		)
+		.orderBy(customProviderKeyTable.createdAt)
+		.limit(1);
+
+	const customProvider = customProviderResults[0];
+	if (!customProvider) {
+		return undefined;
+	}
+
+	return {
+		id: customProvider.key.id,
+		createdAt: customProvider.key.createdAt,
+		updatedAt: customProvider.key.updatedAt,
+		token: customProvider.key.encryptedKey,
+		provider: "custom",
+		name: customProvider.provider.id,
+		baseUrl: customProvider.provider.baseUrl,
+		options: null,
+		status: "active",
+		organizationId,
+	} as ProviderKey;
 }
 
 /**
