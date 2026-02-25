@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception";
 
 import {
+	parseCustomModelId,
 	type Model,
 	models,
 	type Provider,
@@ -33,6 +34,18 @@ export function parseModelInput(modelInput: string): ParseModelInputResult {
 	if (modelInput === "auto" || modelInput === "custom") {
 		requestedProvider = "llmgateway";
 		requestedModel = modelInput as Model;
+	} else if (modelInput.startsWith("custom:")) {
+		const parsedCustomModel = parseCustomModelId(modelInput);
+		if (!parsedCustomModel) {
+			throw new HTTPException(400, {
+				message:
+					"Invalid custom model format. Use custom:<providerId>/<modelId>",
+			});
+		}
+
+		customProviderName = parsedCustomModel.providerId;
+		requestedProvider = "custom";
+		requestedModel = parsedCustomModel.modelId as Model;
 	} else if (modelInput.includes("/")) {
 		const split = modelInput.split("/");
 		const providerCandidate = split[0];
