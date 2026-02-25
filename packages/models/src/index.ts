@@ -5,3 +5,4 @@ export * from "./providers.js";
 export * from "./types.js";
 export * from "./type-guards.js";
 export * from "./helpers.js";
+export * from "./custom-provider.js";
