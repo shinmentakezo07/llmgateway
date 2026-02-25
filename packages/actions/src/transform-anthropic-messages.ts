@@ -27,6 +27,27 @@ export async function transformAnthropicMessages(
 	initialCacheControlCount = 0,
 	minCacheableChars = 1024 * 4,
 ): Promise<AnthropicMessage[]> {
+	const shouldMarkAsCacheable = (
+		textLength: number,
+		currentCacheControlCount: number,
+	) =>
+		shouldApplyCacheControl &&
+		textLength >= minCacheableChars &&
+		currentCacheControlCount < maxCacheControlBlocks;
+
+	const flushToolMessageGroups = () => {
+		for (const toolMessages of toolMessageGroups.values()) {
+			if (toolMessages.length === 0) {
+				continue;
+			}
+
+			for (const toolMessage of toolMessages) {
+				groupedMessages.push(toolMessage);
+			}
+		}
+		toolMessageGroups.clear();
+	};
+
 	const results: AnthropicMessage[] = [];
 
 	// Determine if we should apply cache_control for long prompts
@@ -59,16 +80,9 @@ export async function transformAnthropicMessages(
 			toolMessageGroups.get(message.tool_call_id)!.push(message);
 		} else {
 			// Process any accumulated tool message groups first
-			for (const [_toolCallId, toolMessages] of Array.from(toolMessageGroups)) {
-				if (toolMessages.length > 0) {
-					// Process each tool message individually (don't combine them)
-					// This allows the individual tool_result handling to assign the correct unique IDs
-					toolMessages.forEach((toolMessage) => {
-						groupedMessages.push(toolMessage);
-					});
-				}
-			}
-			toolMessageGroups.clear();
+			// Process each tool message individually (don't combine them)
+			// This allows the individual tool_result handling to assign the correct unique IDs
+			flushToolMessageGroups();
 
 			// Add the non-tool message
 			groupedMessages.push(message);
@@ -76,15 +90,7 @@ export async function transformAnthropicMessages(
 	}
 
 	// Process any remaining tool message groups at the end
-	for (const [_toolCallId, toolMessages] of Array.from(toolMessageGroups)) {
-		if (toolMessages.length > 0) {
-			// Process each tool message individually (don't combine them)
-			// This allows the individual tool_result handling to assign the correct unique IDs
-			toolMessages.forEach((toolMessage) => {
-				groupedMessages.push(toolMessage);
-			});
-		}
-	}
+	flushToolMessageGroups();
 
 	for (const m of groupedMessages) {
 		let content: MessageContent[] = [];
@@ -123,10 +129,10 @@ export async function transformAnthropicMessages(
 					}
 					if (isTextContent(part) && part.text && !part.cache_control) {
 						// Automatically add cache_control for long text blocks
-						const shouldCache =
-							shouldApplyCacheControl &&
-							part.text.length >= minCacheableChars &&
-							cacheControlCount < maxCacheControlBlocks;
+						const shouldCache = shouldMarkAsCacheable(
+							part.text.length,
+							cacheControlCount,
+						);
 						if (shouldCache) {
 							cacheControlCount++;
 							return {
@@ -140,10 +146,10 @@ export async function transformAnthropicMessages(
 			);
 		} else if (m.content && typeof m.content === "string") {
 			// Handle string content - automatically add cache_control for long prompts
-			const shouldCache =
-				shouldApplyCacheControl &&
-				m.content.length >= minCacheableChars &&
-				cacheControlCount < maxCacheControlBlocks;
+			const shouldCache = shouldMarkAsCacheable(
+				m.content.length,
+				cacheControlCount,
+			);
 			const textContent: TextContent = {
 				type: "text",
 				text: m.content,
@@ -248,7 +254,7 @@ export async function transformAnthropicMessages(
 				);
 			} else {
 				// Use the appropriate mapped ID based on the count
-				const toolUseId = mappedToolUseIds[currentCount] || mappedToolUseIds[0];
+				const toolUseId = mappedToolUseIds[currentCount] ?? mappedToolUseIds[0];
 				content = [
 					{
 						type: "tool_result",
