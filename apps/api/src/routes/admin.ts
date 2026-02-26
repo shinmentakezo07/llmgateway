@@ -15,6 +15,7 @@ import {
 	inArray,
 	isNull,
 	lt,
+	ne,
 	or,
 	sql,
 	tables,
@@ -162,6 +163,23 @@ const apiKeysListSchema = z.object({
 	total: z.number(),
 	limit: z.number(),
 	offset: z.number(),
+});
+
+const memberSchema = z.object({
+	id: z.string(),
+	userId: z.string(),
+	role: z.string(),
+	createdAt: z.string(),
+	user: z.object({
+		id: z.string(),
+		email: z.string(),
+		name: z.string().nullable(),
+	}),
+});
+
+const membersListSchema = z.object({
+	members: z.array(memberSchema),
+	total: z.number(),
 });
 
 const getMetrics = createRoute({
@@ -325,6 +343,29 @@ const getOrganizationApiKeys = createRoute({
 	},
 });
 
+const getOrganizationMembers = createRoute({
+	method: "get",
+	path: "/organizations/{orgId}/members",
+	request: {
+		params: z.object({
+			orgId: z.string(),
+		}),
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: membersListSchema.openapi({}),
+				},
+			},
+			description: "Organization members.",
+		},
+		404: {
+			description: "Organization not found.",
+		},
+	},
+});
+
 admin.openapi(getMetrics, async (c) => {
 	const query = c.req.valid("query");
 	const range = query.range ?? "all";
@@ -392,11 +433,11 @@ admin.openapi(getMetrics, async (c) => {
 
 	const payingCustomers = Number(payingRow?.count ?? 0);
 
-	// Total revenue (completed transactions)
+	// Total revenue (completed transactions, excluding gifts, using creditAmount to exclude Stripe fees)
 	const [revenueRow] = await db
 		.select({
 			value:
-				sql<number>`COALESCE(SUM(CAST(${tables.transaction.amount} AS NUMERIC)), 0)`.as(
+				sql<number>`COALESCE(SUM(CAST(${tables.transaction.creditAmount} AS NUMERIC)), 0)`.as(
 					"value",
 				),
 		})
@@ -405,9 +446,13 @@ admin.openapi(getMetrics, async (c) => {
 			startDate
 				? and(
 						eq(tables.transaction.status, "completed"),
+						ne(tables.transaction.type, "credit_gift"),
 						gte(tables.transaction.createdAt, startDate),
 					)
-				: eq(tables.transaction.status, "completed"),
+				: and(
+						eq(tables.transaction.status, "completed"),
+						ne(tables.transaction.type, "credit_gift"),
+					),
 		);
 
 	const totalRevenue = Number(revenueRow?.value ?? 0);
@@ -539,12 +584,12 @@ admin.openapi(getTimeseries, async (c) => {
 		.groupBy(sql`DATE(${tables.user.createdAt})`)
 		.orderBy(asc(sql`DATE(${tables.user.createdAt})`));
 
-	// Revenue per day (completed transactions)
+	// Revenue per day (completed transactions, excluding gifts, using creditAmount)
 	const revenuePerDay = await db
 		.select({
 			date: sql<string>`DATE(${tables.transaction.createdAt})`.as("date"),
 			total:
-				sql<number>`COALESCE(SUM(CAST(${tables.transaction.amount} AS NUMERIC)), 0)`.as(
+				sql<number>`COALESCE(SUM(CAST(${tables.transaction.creditAmount} AS NUMERIC)), 0)`.as(
 					"total",
 				),
 		})
@@ -552,17 +597,18 @@ admin.openapi(getTimeseries, async (c) => {
 		.where(
 			and(
 				eq(tables.transaction.status, "completed"),
+				ne(tables.transaction.type, "credit_gift"),
 				gte(tables.transaction.createdAt, startDate),
 			),
 		)
 		.groupBy(sql`DATE(${tables.transaction.createdAt})`)
 		.orderBy(asc(sql`DATE(${tables.transaction.createdAt})`));
 
-	// Revenue earned before the range (for cumulative chart)
+	// Revenue earned before the range (for cumulative chart, excluding gifts, using creditAmount)
 	const [preRangeRevenueRow] = await db
 		.select({
 			total:
-				sql<number>`COALESCE(SUM(CAST(${tables.transaction.amount} AS NUMERIC)), 0)`.as(
+				sql<number>`COALESCE(SUM(CAST(${tables.transaction.creditAmount} AS NUMERIC)), 0)`.as(
 					"total",
 				),
 		})
@@ -570,6 +616,7 @@ admin.openapi(getTimeseries, async (c) => {
 		.where(
 			and(
 				eq(tables.transaction.status, "completed"),
+				ne(tables.transaction.type, "credit_gift"),
 				sql`${tables.transaction.createdAt} < ${startDate}`,
 			),
 		);
@@ -1177,6 +1224,51 @@ admin.openapi(getOrganizationApiKeys, async (c) => {
 		total,
 		limit,
 		offset,
+	});
+});
+
+admin.openapi(getOrganizationMembers, async (c) => {
+	const { orgId } = c.req.valid("param");
+
+	const org = await db.query.organization.findFirst({
+		where: {
+			id: { eq: orgId },
+		},
+	});
+
+	if (!org) {
+		throw new HTTPException(404, {
+			message: "Organization not found",
+		});
+	}
+
+	const members = await db
+		.select({
+			id: tables.userOrganization.id,
+			userId: tables.userOrganization.userId,
+			role: tables.userOrganization.role,
+			createdAt: tables.userOrganization.createdAt,
+			userName: tables.user.name,
+			userEmail: tables.user.email,
+		})
+		.from(tables.userOrganization)
+		.innerJoin(tables.user, eq(tables.userOrganization.userId, tables.user.id))
+		.where(eq(tables.userOrganization.organizationId, orgId))
+		.orderBy(desc(tables.userOrganization.createdAt));
+
+	return c.json({
+		members: members.map((m) => ({
+			id: m.id,
+			userId: m.userId,
+			role: m.role,
+			createdAt: m.createdAt.toISOString(),
+			user: {
+				id: m.userId,
+				email: m.userEmail,
+				name: m.userName,
+			},
+		})),
+		total: members.length,
 	});
 });
 
