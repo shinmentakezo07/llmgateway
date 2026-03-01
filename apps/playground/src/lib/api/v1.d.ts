@@ -1195,6 +1195,9 @@ export interface paths {
                                 totalSpent?: string;
                                 createdAt: string;
                                 status: string | null;
+                                ownerUserId?: string | null;
+                                ownerName?: string | null;
+                                ownerEmail?: string | null;
                             }[];
                             total: number;
                             totalCredits: string;
@@ -1251,6 +1254,9 @@ export interface paths {
                                 totalSpent?: string;
                                 createdAt: string;
                                 status: string | null;
+                                ownerUserId?: string | null;
+                                ownerName?: string | null;
+                                ownerEmail?: string | null;
                             };
                             /** @enum {string} */
                             window: "1h" | "4h" | "12h" | "1d" | "7d" | "30d" | "90d" | "365d";
@@ -1328,6 +1334,9 @@ export interface paths {
                                 totalSpent?: string;
                                 createdAt: string;
                                 status: string | null;
+                                ownerUserId?: string | null;
+                                ownerName?: string | null;
+                                ownerEmail?: string | null;
                             };
                             transactions: {
                                 id: string;
@@ -1512,6 +1521,7 @@ export interface paths {
                                     id: string;
                                     email: string;
                                     name: string | null;
+                                    emailVerified: boolean;
                                 };
                             }[];
                             total: number;
@@ -2206,6 +2216,52 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description User deleted. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+                /** @description User not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -4246,6 +4302,51 @@ export interface paths {
                     content: {
                         "application/json": {
                             success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/create-checkout-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        amount: number;
+                        /** Format: uri */
+                        returnUrl?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Stripe Checkout session created successfully */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            checkoutUrl: string;
                         };
                     };
                 };

@@ -592,6 +592,151 @@ payments.openapi(topUpWithSavedMethod, async (c) => {
 		success: true,
 	});
 });
+const createCheckoutSession = createRoute({
+	method: "post",
+	path: "/create-checkout-session",
+	request: {
+		body: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						amount: z.number().int().min(5),
+						returnUrl: z.string().url().optional(),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			content: {
+				"application/json": {
+					schema: z.object({
+						checkoutUrl: z.string(),
+					}),
+				},
+			},
+			description: "Stripe Checkout session created successfully",
+		},
+	},
+});
+
+payments.openapi(createCheckoutSession, async (c) => {
+	const user = c.get("user");
+
+	if (!user) {
+		throw new HTTPException(401, {
+			message: "Unauthorized",
+		});
+	}
+
+	if (!user.emailVerified) {
+		throw new HTTPException(403, {
+			message:
+				"Email verification required. Please check your inbox or tap 'Resend Email' in the dashboard.",
+		});
+	}
+
+	const { amount, returnUrl } = c.req.valid("json");
+
+	const userOrganization = await db.query.userOrganization.findFirst({
+		where: {
+			userId: user.id,
+		},
+		with: {
+			organization: true,
+		},
+	});
+
+	if (!userOrganization || !userOrganization.organization) {
+		throw new HTTPException(404, {
+			message: "Organization not found",
+		});
+	}
+
+	const organizationId = userOrganization.organization.id;
+	const stripeCustomerId = await ensureStripeCustomer(organizationId);
+
+	const feeBreakdown = calculateFees({ amount });
+
+	const allowedOrigins = [
+		process.env.UI_URL,
+		process.env.PLAYGROUND_URL,
+		process.env.CODE_URL,
+	].filter(Boolean);
+
+	const defaultBillingUrl = `${process.env.UI_URL ?? "http://localhost:3002"}/dashboard/${organizationId}/org/billing`;
+
+	let successUrl: string;
+	let cancelUrl: string;
+
+	const isAllowedReturn = (() => {
+		if (!returnUrl) {
+			return false;
+		}
+		try {
+			const parsed = new URL(returnUrl);
+			return allowedOrigins.some(
+				(origin) => origin && parsed.origin === new URL(origin).origin,
+			);
+		} catch {
+			return false;
+		}
+	})();
+
+	if (isAllowedReturn && returnUrl) {
+		const separator = returnUrl.includes("?") ? "&" : "?";
+		successUrl = `${returnUrl}${separator}success=true`;
+		cancelUrl = `${returnUrl}${separator}canceled=true`;
+	} else {
+		successUrl = `${defaultBillingUrl}?success=true`;
+		cancelUrl = `${defaultBillingUrl}?canceled=true`;
+	}
+
+	// IMPORTANT: Metadata is intentionally set on the session only, NOT via
+	// payment_intent_data.metadata. This prevents handlePaymentIntentSucceeded
+	// from also processing this payment (it returns early when baseAmount is
+	// missing from the PaymentIntent metadata). Adding payment_intent_data.metadata
+	// here would cause double-crediting. See handleCreditTopUpCheckout in stripe.ts.
+	const session = await getStripe().checkout.sessions.create({
+		customer: stripeCustomerId,
+		mode: "payment",
+		line_items: [
+			{
+				price_data: {
+					currency: "usd",
+					product_data: {
+						name: `Credit Top-Up ($${amount})`,
+						description: `$${amount} in credits for your LLMGateway account`,
+					},
+					unit_amount: Math.round(feeBreakdown.totalAmount * 100),
+				},
+				quantity: 1,
+			},
+		],
+		success_url: successUrl,
+		cancel_url: cancelUrl,
+		metadata: {
+			organizationId,
+			type: "credit_topup",
+			baseAmount: amount.toString(),
+			platformFee: feeBreakdown.platformFee.toString(),
+			userEmail: user.email,
+			userId: user.id,
+		},
+	});
+
+	if (!session.url) {
+		throw new HTTPException(500, {
+			message: "Failed to generate checkout URL",
+		});
+	}
+
+	return c.json({
+		checkoutUrl: session.url,
+	});
+});
+
 const calculateFeesRoute = createRoute({
 	method: "post",
 	path: "/calculate-fees",
