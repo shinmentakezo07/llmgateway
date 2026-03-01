@@ -413,7 +413,7 @@ jobs:
     steps:
       - name: Trigger infra image update
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_INFRA_TOKEN }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           FIRST_LINE=$(echo "$COMMIT_MSG" | head -n1)
